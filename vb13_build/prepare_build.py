@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SRC_EXE = ROOT / "V13-14-source.exe"
-OVERLAY_B64 = ROOT / "overlay.zip.b64"
+OVERLAY_PARTS = ROOT / "overlay_parts"
 OUT = ROOT / "src"
 COOKIE_FMT = "!8sIIII64s"
 COOKIE_SIZE = struct.calcsize(COOKIE_FMT)
@@ -72,12 +72,8 @@ def main() -> None:
     (OUT / "분석설계V13-14_해지계약출력제외.py").write_text(shim, encoding="utf-8")
 
     helper_modules = [
-        "insurance_pdf_parser_v11_15",
-        "app_observability",
-        "support_center",
-        "renewal_writer_engine_v13_3",
-        "consultation_report",
-        "asset_manager",
+        "insurance_pdf_parser_v11_15", "app_observability", "support_center",
+        "renewal_writer_engine_v13_3", "consultation_report", "asset_manager",
     ]
     for module in helper_modules:
         if module not in pyz_toc:
@@ -103,7 +99,10 @@ def main() -> None:
         dest.write_bytes(raw)
         print("recovered resource", name)
 
-    overlay_text = ''.join(OVERLAY_B64.read_text(encoding="ascii").split())
+    part_files = sorted(OVERLAY_PARTS.glob("*.txt"))
+    if len(part_files) != 5:
+        raise RuntimeError(f"Expected 5 overlay chunks, got {len(part_files)}")
+    overlay_text = ''.join(''.join(p.read_text(encoding='ascii').split()) for p in part_files)
     overlay_text += '=' * (-len(overlay_text) % 4)
     overlay_bytes = base64.b64decode(overlay_text)
     overlay_zip = ROOT / "overlay.zip"
