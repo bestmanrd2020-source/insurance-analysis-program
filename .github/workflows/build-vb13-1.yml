@@ -32,7 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pyinstaller==6.16.0
 
-      - name: Download current V13-21 distribution
+      - name: Download known-good V13-14 distribution
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -43,50 +43,47 @@ jobs:
             'X-GitHub-Api-Version' = '2022-11-28'
             'User-Agent' = 'VB13-1-Windows-Builder'
           }
-          $release = Invoke-RestMethod -Headers $headers -Uri 'https://api.github.com/repos/bestmanrd2020-source/insurance-analysis-program/releases/tags/V13-21'
-          $asset = $release.assets | Where-Object { $_.name -eq 'V13-21_.EXE._.exe' } | Select-Object -First 1
-          if ($null -eq $asset) { throw 'V13-21 release EXE asset was not found.' }
+          $release = Invoke-RestMethod -Headers $headers -Uri 'https://api.github.com/repos/bestmanrd2020-source/insurance-analysis-program/releases/tags/V13-14'
+          $asset = $release.assets | Where-Object { $_.name.ToLowerInvariant().EndsWith('.exe') } | Select-Object -First 1
+          if ($null -eq $asset) { throw 'V13-14 EXE release asset was not found.' }
           $downloadHeaders = @{
             Authorization = "Bearer $env:GH_TOKEN"
             Accept = 'application/octet-stream'
             'X-GitHub-Api-Version' = '2022-11-28'
             'User-Agent' = 'VB13-1-Windows-Builder'
           }
-          Invoke-WebRequest -Headers $downloadHeaders -Uri $asset.url -OutFile 'original_v13_21.exe'
-          if ((Get-Item 'original_v13_21.exe').Length -lt 40000000) { throw 'V13-21 download is unexpectedly small.' }
+          Invoke-WebRequest -Headers $downloadHeaders -Uri $asset.url -OutFile 'known_good_v13_14.exe'
+          $size = (Get-Item 'known_good_v13_14.exe').Length
+          Write-Host "V13-14 source EXE size:" $size
+          if ($size -lt 40000000) { throw 'V13-14 download is unexpectedly small.' }
 
-      - name: Recover verified runtime and source chain
+      - name: Recover exact V13-14 core and runtime
         shell: pwsh
         run: |
-          python build_tools/extract_runtime.py original_v13_21.exe legacy_runtime
-          New-Item -ItemType Directory -Force -Path app_payload | Out-Null
-          $sources = @(
-            '분석설계V13-14_해지계약출력제외.py',
-            '분석설계V13-15_관리자원격승인.py',
-            '분석설계V13-16_RPC오류수정.py',
-            '분석설계V13-17_신청일시한국시간표시.py',
-            '분석설계V13-18_원격승인배포보완.py',
-            '분석설계V13-19_원격승인완성판.py'
-          )
-          foreach ($name in $sources) {
-            Move-Item -LiteralPath (Join-Path 'legacy_runtime' $name) -Destination (Join-Path 'app_payload' $name) -Force
-          }
-          foreach ($folder in @('assets','templates','guides')) {
-            if (Test-Path -LiteralPath (Join-Path 'legacy_runtime' $folder)) {
-              Move-Item -LiteralPath (Join-Path 'legacy_runtime' $folder) -Destination (Join-Path 'app_payload' $folder) -Force
-            }
-          }
-          Remove-Item -LiteralPath 'legacy_runtime\python312.dll' -Force -ErrorAction SilentlyContinue
-          Remove-Item -LiteralPath 'legacy_runtime\base_library.zip' -Force -ErrorAction SilentlyContinue
+          python build_tools/extract_v13_14_runtime.py known_good_v13_14.exe legacy_runtime app_payload
+          if (-not (Test-Path -LiteralPath 'app_payload\분석설계V13-14_해지계약출력제외.pyc')) { throw 'V13-14 compiled core was not recovered.' }
           Write-Host "legacy runtime files:" ((Get-ChildItem legacy_runtime -Recurse -File).Count)
           Write-Host "app payload files:" ((Get-ChildItem app_payload -Recurse -File).Count)
+
+      - name: Syntax-check current wrapper sources
+        shell: pwsh
+        run: |
+          python -m py_compile `
+            'src\분석설계VB13-1.py' `
+            'app_src\분석설계V13-15_관리자원격승인.py' `
+            'app_src\분석설계V13-16_RPC오류수정.py' `
+            'app_src\분석설계V13-17_신청일시한국시간표시.py' `
+            'app_src\분석설계V13-18_원격승인배포보완.py' `
+            'app_src\분석설계V13-19_원격승인완성판.py' `
+            'app_src\remote_license_v13_15.py' `
+            'app_src\remote_license_v13_16.py'
 
       - name: Build stock-bootloader onefile EXE
         shell: pwsh
         run: |
           python -m PyInstaller --noconfirm --clean '분석설계VB13-1.spec'
 
-      - name: Verify PE executable and import smoke test
+      - name: Verify real Windows executable and full import chain
         shell: pwsh
         run: |
           $exe = 'dist\분석설계VB13-1_윈도우단일EXE배포용.exe'
