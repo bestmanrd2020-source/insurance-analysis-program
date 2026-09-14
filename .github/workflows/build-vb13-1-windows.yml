@@ -1,0 +1,72 @@
+name: Build VB13-1 Windows EXE
+
+on:
+  push:
+    branches: ["build-vb13-1-windows"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+
+      - name: Prepare build source from V13-21 release
+        shell: pwsh
+        run: |
+          cd vb13_build
+          python prepare_build.py
+          Copy-Item "분석설계VB13-1_윈도우배포판.py" "src\분석설계VB13-1_윈도우배포판.py"
+          Copy-Item "분석설계VB13-1_윈도우배포판.spec" "src\분석설계VB13-1_윈도우배포판.spec"
+          Copy-Item "requirements-build.txt" "src\requirements-build.txt"
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          cd vb13_build\src
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-build.txt
+
+      - name: Verify recovered modules
+        shell: pwsh
+        run: |
+          cd vb13_build\src
+          python -c "import insurance_pdf_parser_v11_15, app_observability, support_center, renewal_writer_engine_v13_3, consultation_report, asset_manager, remote_license_v13_15, remote_license_v13_16; print('custom modules OK')"
+
+      - name: Build Windows one-file EXE
+        shell: pwsh
+        run: |
+          cd vb13_build\src
+          python -m PyInstaller --clean --noconfirm "분석설계VB13-1_윈도우배포판.spec"
+          Get-ChildItem dist
+
+      - name: Smoke test EXE startup
+        shell: pwsh
+        run: |
+          cd vb13_build\src
+          $exe = Get-ChildItem -Path dist -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "EXE not found" }
+          $p = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 12
+          if ($p.HasExited) {
+            throw "Built EXE exited during startup test. ExitCode=$($p.ExitCode)"
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          Get-FileHash -Algorithm SHA256 $exe.FullName
+
+      - name: Upload Windows EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VB13-1-Windows-EXE
+          path: vb13_build/src/dist/*.exe
+          if-no-files-found: error
+          retention-days: 7
