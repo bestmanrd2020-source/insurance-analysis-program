@@ -84,10 +84,8 @@ def main() -> None:
         print("recovered helper", module)
 
     data_names = [
-        "assets/상단_보장분석_배너.png",
-        "assets/카카오페이_송금QR_김승혁.png",
-        "templates/통합양식.xlsx",
-        "templates/갱신형3 5 10 20 30년갱신.xlsx",
+        "assets/상단_보장분석_배너.png", "assets/카카오페이_송금QR_김승혁.png",
+        "templates/통합양식.xlsx", "templates/갱신형3 5 10 20 30년갱신.xlsx",
         "guides/kb손보 데이터파일 만들기 가이드.pdf",
     ]
     for name in data_names:
@@ -113,15 +111,22 @@ def main() -> None:
         zf.extractall(OUT)
     overlay_zip.unlink(missing_ok=True)
 
-    required = [
-        "분석설계V13-15_관리자원격승인.py",
-        "분석설계V13-16_RPC오류수정.py",
-        "분석설계V13-17_신청일시한국시간표시.py",
-        "분석설계V13-18_원격승인배포보완.py",
-        "분석설계V13-19_원격승인완성판.py",
-        "remote_license_v13_15.pyc",
-        "remote_license_v13_16.pyc",
-    ]
+    # ZIP was produced on Linux with legacy filename flags; the Korean portions may be
+    # decoded by Windows as CP437. The version token remains ASCII, so normalize by it.
+    canonical = {
+        "V13-15": "분석설계V13-15_관리자원격승인.py",
+        "V13-16": "분석설계V13-16_RPC오류수정.py",
+        "V13-17": "분석설계V13-17_신청일시한국시간표시.py",
+        "V13-18": "분석설계V13-18_원격승인배포보완.py",
+        "V13-19": "분석설계V13-19_원격승인완성판.py",
+    }
+    for path in list(OUT.glob("*.py")):
+        for token, target in canonical.items():
+            if token in path.name and path.name != target:
+                path.replace(OUT / target)
+                break
+
+    required = list(canonical.values()) + ["remote_license_v13_15.pyc", "remote_license_v13_16.pyc"]
     for name in required:
         if not (OUT / name).exists():
             raise RuntimeError(f"Overlay file missing: {name}")
