@@ -19,7 +19,7 @@ jobs:
           python-version: "3.12"
           architecture: "x64"
 
-      - name: Download V13-21 release EXE
+      - name: Download stable V13-14 release EXE
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -30,10 +30,12 @@ jobs:
             'X-GitHub-Api-Version' = '2022-11-28'
             'User-Agent' = 'VB13-1-Windows-Builder'
           }
-          Invoke-WebRequest -Headers $headers -Uri 'https://api.github.com/repos/bestmanrd2020-source/insurance-analysis-program/releases/assets/562941477' -OutFile 'vb13_build\V13-21-source.exe'
-          Get-Item 'vb13_build\V13-21-source.exe'
+          Invoke-WebRequest -Headers $headers -Uri 'https://api.github.com/repos/bestmanrd2020-source/insurance-analysis-program/releases/assets/563018047' -OutFile 'vb13_build\V13-14-source.exe'
+          $f = Get-Item 'vb13_build\V13-14-source.exe'
+          if ($f.Length -lt 50000000) { throw "Downloaded V13-14 EXE is unexpectedly small: $($f.Length)" }
+          Get-FileHash -Algorithm SHA256 $f.FullName
 
-      - name: Prepare build source from V13-21 release
+      - name: Prepare build source
         shell: pwsh
         run: |
           cd vb13_build
@@ -54,6 +56,7 @@ jobs:
         run: |
           cd vb13_build\src
           python -c "import insurance_pdf_parser_v11_15, app_observability, support_center, renewal_writer_engine_v13_3, consultation_report, asset_manager, remote_license_v13_15, remote_license_v13_16; print('custom modules OK')"
+          python -c "import importlib.util, pathlib; p=pathlib.Path('analysis_v13_14_compiled.pyc'); s=importlib.util.spec_from_file_location('v14check',p); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print('V13-14 compiled base OK')"
 
       - name: Build Windows one-file EXE
         shell: pwsh
@@ -69,7 +72,7 @@ jobs:
           $exe = Get-ChildItem -Path dist -Filter "*.exe" | Select-Object -First 1
           if (-not $exe) { throw "EXE not found" }
           $p = Start-Process -FilePath $exe.FullName -PassThru
-          Start-Sleep -Seconds 12
+          Start-Sleep -Seconds 15
           if ($p.HasExited) {
             throw "Built EXE exited during startup test. ExitCode=$($p.ExitCode)"
           }
