@@ -33,17 +33,14 @@ def main(exe_path: Path, runtime_dir: Path, app_dir: Path) -> None:
     archive = CArchiveReader(str(exe_path))
     pyc_header = importlib.util.MAGIC_NUMBER + struct.pack("<III", 0, 0, 0)
 
-    # Recover the exact compiled V13-14 main program from the known-good distribution.
     if MAIN_ENTRY not in archive.toc:
-        raise RuntimeError(f"V13-14 main entry not found: {MAIN_ENTRY}")
+        raise RuntimeError("V13-14 main entry not found")
     *_, main_type = archive.toc[MAIN_ENTRY]
     if main_type != "s":
         raise RuntimeError(f"Unexpected main entry type: {main_type!r}")
     main_marshaled_code = archive.extract(MAIN_ENTRY)
     write_file(app_dir / f"{MAIN_ENTRY}.pyc", pyc_header + main_marshaled_code)
 
-    # Recover the original data/native payload. Assets used by the application itself stay at
-    # bundle root; everything else becomes the compatibility runtime used by the V13-14 code.
     for name, entry in archive.toc.items():
         *_, typecode = entry
         if typecode in {"o", "s", "m", "M", "z"}:
@@ -54,7 +51,6 @@ def main(exe_path: Path, runtime_dir: Path, app_dir: Path) -> None:
         target_root = app_dir if rel.parts[0] in APP_FOLDERS else runtime_dir
         write_file(target_root / rel, archive.extract(name))
 
-    # Recreate every module from V13-14's embedded PYZ as Python 3.12 .pyc files.
     pyz = archive.open_embedded_archive("PYZ.pyz")
     module_count = 0
     for module_name, entry in pyz.toc.items():
@@ -75,12 +71,11 @@ def main(exe_path: Path, runtime_dir: Path, app_dir: Path) -> None:
         write_file(dest, pyc_header + raw)
         module_count += 1
 
-    # The new PyInstaller executable supplies these two bootstrap/runtime files itself.
-    # Keeping old copies at bundle root can make Windows load the wrong interpreter runtime.
     for duplicate in (runtime_dir / "python312.dll", runtime_dir / "base_library.zip"):
         duplicate.unlink(missing_ok=True)
 
-    print(f"V13-14 main pyc: {app_dir / (MAIN_ENTRY + '.pyc')}")
+    # Keep output ASCII-only because Windows GitHub runners can use cp1252 for Python stdout.
+    print("V13-14 compiled core recovered: yes")
     print(f"Recovered PYZ modules: {module_count}")
     print(f"Compatibility runtime files: {sum(1 for p in runtime_dir.rglob('*') if p.is_file())}")
     print(f"Application payload files: {sum(1 for p in app_dir.rglob('*') if p.is_file())}")
