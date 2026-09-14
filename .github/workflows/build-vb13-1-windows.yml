@@ -5,6 +5,10 @@ on:
     branches: ["build-vb13-1-windows"]
   workflow_dispatch:
 
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 jobs:
   build:
     runs-on: windows-latest
