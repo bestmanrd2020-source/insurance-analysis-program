@@ -1,0 +1,108 @@
+name: Build VB13-1 Windows EXE
+
+on:
+  push:
+    branches:
+      - vb13-1-build4
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller==6.16.0
+
+      - name: Download known-good V13-14 distribution
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+            'User-Agent' = 'VB13-1-Windows-Builder'
+          }
+          $release = Invoke-RestMethod -Headers $headers -Uri 'https://api.github.com/repos/bestmanrd2020-source/insurance-analysis-program/releases/tags/V13-14'
+          $asset = $release.assets | Where-Object { $_.name.ToLowerInvariant().EndsWith('.exe') } | Select-Object -First 1
+          if ($null -eq $asset) { throw 'V13-14 EXE release asset was not found.' }
+          $downloadHeaders = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/octet-stream'
+            'X-GitHub-Api-Version' = '2022-11-28'
+            'User-Agent' = 'VB13-1-Windows-Builder'
+          }
+          Invoke-WebRequest -Headers $downloadHeaders -Uri $asset.url -OutFile 'known_good_v13_14.exe'
+          $size = (Get-Item 'known_good_v13_14.exe').Length
+          Write-Host "V13-14 source EXE size:" $size
+          if ($size -lt 40000000) { throw 'V13-14 download is unexpectedly small.' }
+
+      - name: Recover exact V13-14 core and runtime
+        shell: pwsh
+        run: |
+          python build_tools/extract_v13_14_runtime.py known_good_v13_14.exe legacy_runtime app_payload
+          if (-not (Test-Path -LiteralPath 'app_payload\분석설계V13-14_해지계약출력제외.pyc')) { throw 'V13-14 compiled core was not recovered.' }
+          Write-Host "legacy runtime files:" ((Get-ChildItem legacy_runtime -Recurse -File).Count)
+          Write-Host "app payload files:" ((Get-ChildItem app_payload -Recurse -File).Count)
+
+      - name: Syntax-check current wrapper sources
+        shell: pwsh
+        run: |
+          python -m py_compile `
+            'src\분석설계VB13-1.py' `
+            'app_src\분석설계V13-15_관리자원격승인.py' `
+            'app_src\분석설계V13-16_RPC오류수정.py' `
+            'app_src\분석설계V13-17_신청일시한국시간표시.py' `
+            'app_src\분석설계V13-18_원격승인배포보완.py' `
+            'app_src\분석설계V13-19_원격승인완성판.py' `
+            'app_src\remote_license_v13_15.py' `
+            'app_src\remote_license_v13_16.py'
+
+      - name: Build stock-bootloader onefile EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean '분석설계VB13-1.spec'
+
+      - name: Verify real Windows executable and full import chain
+        shell: pwsh
+        run: |
+          $exe = 'dist\분석설계VB13-1_윈도우단일EXE배포용.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw 'EXE was not produced.' }
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          if ($bytes.Length -lt 2 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Not a valid Windows PE file.' }
+          $p = Start-Process -FilePath $exe -ArgumentList '--build-smoke-test' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "VB13-1 smoke test failed with exit code $($p.ExitCode)." }
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "EXE size:" (Get-Item -LiteralPath $exe).Length
+          Write-Host "SHA256:" $hash
+          $hash | Out-File -LiteralPath 'dist\SHA256.txt' -Encoding ascii
+
+      - name: Upload Windows distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VB13-1-Windows-EXE
+          path: |
+            dist/분석설계VB13-1_윈도우단일EXE배포용.exe
+            dist/SHA256.txt
+          if-no-files-found: error
+          retention-days: 7
