@@ -75,16 +75,34 @@ jobs:
           cd vb13_build\src
           $exe = Get-ChildItem -Path dist -Filter "*.exe" | Select-Object -First 1
           if (-not $exe) { throw "EXE not found" }
-          $p = Start-Process -FilePath $exe.FullName -PassThru
+          $stdout = Join-Path $PWD 'startup-stdout.txt'
+          $stderr = Join-Path $PWD 'startup-stderr.txt'
+          $p = Start-Process -FilePath $exe.FullName -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           Start-Sleep -Seconds 15
           if ($p.HasExited) {
+            Write-Host '===== STDOUT ====='
+            if (Test-Path $stdout) { Get-Content $stdout -Raw }
+            Write-Host '===== STDERR ====='
+            if (Test-Path $stderr) { Get-Content $stderr -Raw }
             throw "Built EXE exited during startup test. ExitCode=$($p.ExitCode)"
           }
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           Start-Sleep -Seconds 2
           Get-FileHash -Algorithm SHA256 $exe.FullName
 
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VB13-1-startup-diagnostics
+          path: |
+            vb13_build/src/startup-stdout.txt
+            vb13_build/src/startup-stderr.txt
+          if-no-files-found: ignore
+          retention-days: 2
+
       - name: Upload Windows EXE artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: VB13-1-Windows-EXE
