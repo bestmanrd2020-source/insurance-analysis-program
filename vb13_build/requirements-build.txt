@@ -1,0 +1,12 @@
+pyinstaller==6.16.0
+selenium
+truststore
+certifi
+PyMuPDF
+openpyxl
+xlwings
+xlrd
+cryptography
+pillow
+pyautogui
+pygetwindow
