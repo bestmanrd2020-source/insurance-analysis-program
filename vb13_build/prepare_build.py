@@ -62,19 +62,15 @@ def main() -> None:
     tocpos = struct.unpack("!I", pyz[8:12])[0]
     pyz_toc = dict(marshal.loads(pyz[tocpos:]))
 
-    # V13-14's real main module is a marshalled code object in the CArchive.
     main_entry = "분석설계V13-14_해지계약출력제외"
     if main_entry not in entries:
         raise RuntimeError("V13-14 main script not found in stable EXE")
     _typecode, main_marshaled = entries[main_entry]
     (OUT / "analysis_v13_14_compiled.pyc").write_bytes(sourceless_pyc(pyc_magic, main_marshaled))
 
-    # V15-V19 expect to load a .py file by path, so provide a tiny shim that executes
-    # the original compiled V13-14 module and re-exports its globals unchanged.
-    shim = '''from __future__ import annotations\nimport importlib.util\nimport sys\nfrom pathlib import Path\n\nHERE = Path(__file__).resolve().parent\nPYC = HERE / "analysis_v13_14_compiled.pyc"\nif getattr(sys, "frozen", False):\n    PYC = Path(getattr(sys, "_MEIPASS", HERE)) / PYC.name\n_spec = importlib.util.spec_from_file_location("_analysis_v13_14_compiled", PYC)\nif _spec is None or _spec.loader is None:\n    raise ImportError("V13-14 compiled base could not be loaded")\n_mod = importlib.util.module_from_spec(_spec)\nsys.modules[_spec.name] = _mod\n_spec.loader.exec_module(_mod)\nfor _key, _value in vars(_mod).items():\n    if _key not in {"__name__", "__loader__", "__package__", "__spec__", "__file__", "__cached__"}:\n        globals()[_key] = _value\n'''
+    shim = '''from __future__ import annotations\nimport importlib.util\nimport sys\nfrom pathlib import Path\nHERE = Path(__file__).resolve().parent\nPYC = HERE / "analysis_v13_14_compiled.pyc"\nif getattr(sys, "frozen", False):\n    PYC = Path(getattr(sys, "_MEIPASS", HERE)) / PYC.name\n_spec = importlib.util.spec_from_file_location("_analysis_v13_14_compiled", PYC)\nif _spec is None or _spec.loader is None:\n    raise ImportError("V13-14 compiled base could not be loaded")\n_mod = importlib.util.module_from_spec(_spec)\nsys.modules[_spec.name] = _mod\n_spec.loader.exec_module(_mod)\nfor _key, _value in vars(_mod).items():\n    if _key not in {"__name__", "__loader__", "__package__", "__spec__", "__file__", "__cached__"}:\n        globals()[_key] = _value\n'''
     (OUT / "분석설계V13-14_해지계약출력제외.py").write_text(shim, encoding="utf-8")
 
-    # Recover project helper modules from the stable V13-14 PYZ without decompiling.
     helper_modules = [
         "insurance_pdf_parser_v11_15",
         "app_observability",
@@ -91,7 +87,6 @@ def main() -> None:
         (OUT / f"{module}.pyc").write_bytes(sourceless_pyc(pyc_magic, marshalled_code))
         print("recovered helper", module)
 
-    # Recover the original resources from the stable executable.
     data_names = [
         "assets/상단_보장분석_배너.png",
         "assets/카카오페이_송금QR_김승혁.png",
@@ -108,11 +103,13 @@ def main() -> None:
         dest.write_bytes(raw)
         print("recovered resource", name)
 
-    # Overlay exact V13-15..V13-19 sources and remote-license pycs previously recovered
-    # from the current V13-21 build. They preserve the current remote-approval features.
-    overlay_bytes = base64.b64decode(OVERLAY_B64.read_text(encoding="ascii"))
+    overlay_text = ''.join(OVERLAY_B64.read_text(encoding="ascii").split())
+    overlay_text += '=' * (-len(overlay_text) % 4)
+    overlay_bytes = base64.b64decode(overlay_text)
     overlay_zip = ROOT / "overlay.zip"
     overlay_zip.write_bytes(overlay_bytes)
+    if not zipfile.is_zipfile(overlay_zip):
+        raise RuntimeError(f"Overlay bundle is not a valid ZIP (decoded size={len(overlay_bytes)})")
     with zipfile.ZipFile(overlay_zip, "r") as zf:
         zf.extractall(OUT)
     overlay_zip.unlink(missing_ok=True)
