@@ -1,7 +1,8 @@
 """분석설계 VB13-1 - Windows 단일 EXE 배포판.
 
-현재 V13-19 원격승인 기능을 유지하고, V13-14까지 정상 동작했던 표준
-PyInstaller 부트로더/자동업데이트 흐름으로 다시 빌드하기 위한 진입점이다.
+현재 V13-19 원격승인 기능을 유지하면서, 실제 실행 기반은 자동 업데이트가
+정상적이었던 V13-14 배포판의 프로그램 코드와 표준 PyInstaller 부트로더로
+다시 구성한다.
 """
 from __future__ import annotations
 
@@ -15,12 +16,13 @@ from pathlib import Path
 BUNDLE_ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)).resolve()
 LEGACY_RUNTIME = BUNDLE_ROOT / "legacy_runtime"
 
-# V13-21 배포판에서 검증된 Python 모듈/PYD/DLL을 그대로 재사용한다.
+# 동적으로 불러오는 V13-15~19 및 원격승인 모듈은 번들 루트에 데이터 파일로 있다.
+if str(BUNDLE_ROOT) not in sys.path:
+    sys.path.insert(0, str(BUNDLE_ROOT))
+
+# 자동업데이트가 정상 동작했던 V13-14 배포판의 Python 모듈/PYD/DLL을 재사용한다.
 if LEGACY_RUNTIME.exists():
     sys.path.insert(0, str(LEGACY_RUNTIME))
-    base_zip = LEGACY_RUNTIME / "base_library.zip"
-    if base_zip.exists():
-        sys.path.insert(0, str(base_zip))
     try:
         os.add_dll_directory(str(LEGACY_RUNTIME))
     except (AttributeError, FileNotFoundError, OSError):
@@ -85,7 +87,7 @@ App.__init__ = _vb13_1_init
 
 
 def main() -> int:
-    # GitHub Actions에서 실제 Windows EXE가 최소한 전체 소스/모듈을 정상 로드하는지 확인한다.
+    # Windows Actions에서 실제 EXE가 전체 코드 체인을 정상 로드하는지 먼저 검증한다.
     if "--build-smoke-test" in sys.argv:
         return 0
     app = App()
